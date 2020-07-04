@@ -23,16 +23,3 @@ bool arch_cpu_has_vmx(void) {
                                 CPUID_VMX_ENABLED_SUBLEAF, CPUID_REGISTER_ECX,
                                 CPUID_VMX_ENABLED_BIT);
 }
-
-u64 arch_rdmsr(u64 msr) {
-    u32 low, high;
-    asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
-    return ((u64)high << 32) | low;
-}
-
-void arch_wrmsr(u64 msr, u64 value) {
-    u32 low = value & 0xFFFFFFFF;
-    u32 high = value >> 32;
-
-    asm volatile("wrmsr" : : "c"(msr), "a"(low), "d"(high));
-}
