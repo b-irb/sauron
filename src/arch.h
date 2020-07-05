@@ -11,5 +11,11 @@
 #define CPUID_REGISTER_ECX 0x2
 #define CPUID_REGISTER_EDX 0x3
 
+struct vmm_cpu_ctx;
+
 bool arch_cpu_has_feature(u32, u32, u32, u32);
 bool arch_cpu_has_vmx(void);
+void arch_enable_vmxe(void);
+void arch_disable_vmxe(void);
+u8 arch_do_vmx_off(void);
+u8 arch_do_vmx_on(unsigned long);
