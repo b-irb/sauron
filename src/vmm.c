@@ -1,29 +1,54 @@
 #include "vmm.h"
 
 #include <asm-generic/errno.h>
+#include <asm/io.h>
+#include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
-#include <linux/refcount.h>
+#include <linux/slab.h>
 #include <linux/smp.h>
 #include <linux/types.h>
-/*#include <linux/vmalloc.h>*/
-#include <asm/io.h>
-#include <linux/slab.h>
 
 #include "arch.h"
-#include "msr.h"
+#include "ia32.h"
 #include "utils.h"
 #include "vmx.h"
 
-static vmm_cpu_enable_vmx(struct vmm_global_ctx* vmm_ctx) {
+static void vmm_cpu_disable_vmx(void* info) {
     const int processor_id = smp_processor_id();
-    struct vmm_cpu_ctx ctx = vmm_ctx->each_cpu_ctx[processor_id];
+    struct vmm_global_ctx* vmm_ctx = info;
+    struct vmm_cpu_ctx* cpu_ctx = &vmm_ctx->each_cpu_ctx[processor_id];
 
-    ctx->processor_id = processor_id;
+    utils_log(info, "processor [%d]: disabling VMX\n", processor_id);
+
+    if (arch_do_vmx_off() != 0) {
+        utils_log(
+            err, "processor [%d]: an error occured during VMX root operation\n",
+            processor_id);
+    }
+
+    arch_disable_vmxe();
+    vmx_reset_fixed_bits(cpu_ctx);
+}
+
+static void vmm_cpu_enable_vmx(void* info) {
+    const int processor_id = smp_processor_id();
+    struct vmm_global_ctx* vmm_ctx = info;
+    struct vmm_cpu_ctx* cpu_ctx = &vmm_ctx->each_cpu_ctx[processor_id];
+
+    cpu_ctx->processor_id = processor_id;
+
+    arch_enable_vmxe();
+    vmx_set_fixed_bits(cpu_ctx);
+
+    if (arch_do_vmx_on(cpu_ctx->vmxon_region_ptr) != 0) {
+        utils_log(err, "processor [%d]: VMXON failed\n", processor_id);
+    }
+    utils_log(info, "processor [%d]: enabled VMX\n", processor_id);
 }
 
 static bool is_system_hyperviseable(void) {
-    union ia32_feature_control_msr feature_control_msr;
+    IA32_FEATURE_CONTROL_REGISTER feature_control;
 
     /* Does the processor have implemented virtual machine extensions? */
     if (!arch_cpu_has_vmx()) {
@@ -31,18 +56,18 @@ static bool is_system_hyperviseable(void) {
         return false;
     }
 
-    feature_control_msr.value = __rdmsr(IA32_FEATURE_CONTROL_MSR);
+    feature_control.Flags = __rdmsr(IA32_FEATURE_CONTROL);
 
     /* BIOS can disable VMX which causes VMXON to generate a #GP fault. The MSR
      * cannot be modified until a power-up reset condition. */
-    if (!feature_control_msr.fields.lock) {
+    if (!feature_control.LockBit) {
         utils_log(err, "BIOS has disabled support for VMX\n");
         return false;
     }
 
     /* BIOS can disable VMX outside of SMX which causes VMXON to generate a #GP
      * fault. */
-    if (!feature_control_msr.fields.enable_vmx_outside_smx) {
+    if (!feature_control.EnableVmxOutsideSmx) {
         utils_log(err, "BIOS has disabled VMX support outside SMX\n");
         return false;
     }
@@ -94,6 +119,7 @@ static struct vmm_global_ctx* vmm_global_ctx_create(void) {
     }
 
     ctx->n_online_cpus = (size_t)num_online_cpus();
+    ctx->vmx_capabilities.Flags = __rdmsr(IA32_VMX_BASIC);
 
     if (!(ctx->each_cpu_ctx = kzalloc(
               ctx->n_online_cpus * sizeof(*ctx->each_cpu_ctx), GFP_KERNEL))) {

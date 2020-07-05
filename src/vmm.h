@@ -1,8 +1,7 @@
 #pragma once
-#include <linux/refcount.h>
 #include <linux/types.h>
 
-#include "msr.h"
+#include "ia32.h"
 
 struct vmx_vmcs_region;
 struct vmx_vmxon_region;
@@ -15,6 +14,11 @@ struct vmm_cpu_ctx {
     unsigned long vmcs_region_ptr;
     /* Physical address of VMXON region. */
     unsigned long vmxon_region_ptr;
+
+    /* Preserve state of CR0 and CR4 prior to fixing of VMX bits to allow for
+     * resetting. */
+    CR0 unfixed_control_register0;
+    CR4 unfixed_control_register4;
 };
 
 struct vmm_global_ctx {
@@ -22,7 +26,7 @@ struct vmm_global_ctx {
     size_t n_init_cpus;
     struct vmm_cpu_ctx* each_cpu_ctx;
 
-    union ia32_vmx_basic_msr vmx_capabilities;
+    IA32_VMX_BASIC_REGISTER vmx_capabilities;
 };
 
 ssize_t vmm_init_processors(void);
