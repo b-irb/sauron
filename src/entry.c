@@ -1,4 +1,3 @@
-
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/kobject.h>
@@ -31,7 +30,7 @@ static ssize_t attach(void) {
     }
 
     utils_log(info, "entering VMX root mode\n");
-    return vmm_initialise_processors();
+    return vmm_init_processors();
 }
 
 static ssize_t operation_show(struct kobject* kobj, struct kobj_attribute* attr,
