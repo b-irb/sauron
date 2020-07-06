@@ -17,5 +17,5 @@ bool arch_cpu_has_feature(u32, u32, u32, u32);
 bool arch_cpu_has_vmx(void);
 void arch_enable_vmxe(void);
 void arch_disable_vmxe(void);
-u8 arch_do_vmx_off(void);
-u8 arch_do_vmx_on(unsigned long);
+u8 arch_do_vmxoff(void);
+u8 arch_do_vmxon(unsigned long);
