@@ -30,22 +30,22 @@ bool arch_cpu_has_vmx(void) {
 }
 
 void arch_enable_vmxe() {
-    CR4 cr4 = {.Flags = __read_cr4()};
+    CR4 cr4 = {.flags = __read_cr4()};
     /* To enable VMX, software must ensure CR4.VMXE[bit 13] = 1. Otherwise,
      * VMXON will generate a #UD exception. */
-    cr4.VmxEnable = 1;
-    __write_cr4(cr4.Flags);
+    cr4.vmx_enable = 1;
+    __write_cr4(cr4.flags);
 }
 
 void arch_disable_vmxe(void) {
-    CR4 cr4 = {.Flags = __read_cr4()};
+    CR4 cr4 = {.flags = __read_cr4()};
     /* To disable VMX, software must ensure CR4.VMXE[bit 13] = 0. This will
      * cause VMXON to generate a #UD exception. */
-    cr4.VmxEnable = 0;
-    __write_cr4(cr4.Flags);
+    cr4.vmx_enable = 0;
+    __write_cr4(cr4.flags);
 }
 
-uint8_t arch_do_vmx_off(void) {
+uint8_t arch_do_vmxoff(void) {
     u8 cf, zf;
 
     /* Takes the logical processor out of VMX operation.
@@ -58,7 +58,7 @@ uint8_t arch_do_vmx_off(void) {
     return cf | zf;
 }
 
-u8 arch_do_vmx_on(unsigned long vmxon_region_ptr) {
+u8 arch_do_vmxon(unsigned long vmxon_region_ptr) {
     u8 ret;
 
     /* Puts the logical processor in VMX operation with no current VMCS.
