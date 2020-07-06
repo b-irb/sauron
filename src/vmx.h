@@ -1,18 +1,18 @@
 #pragma once
 
+#include <asm/page.h>
 #include <linux/types.h>
 
-/* Maximum size for VMCS related structures is 4096 bytes. */
-#define VMXON_REGION_REQUIRED_PAGES 2
+#include "ia32.h"
 
-struct vmx_vmxon_region {
-    u32 vmcs_revision_number;
-};
+/* Maximum size for VMCS related structures is 4096 bytes (1 standard page). */
+#define VMXON_REGION_REQUIRED_PAGES 1
+#define VMXON_REGION_REQUIRED_BYTES PAGE_SIZE* VMXON_REGION_REQUIRED_PAGES
 
 struct vmm_global_ctx;
 struct vmm_cpu_ctx;
 
-struct vmx_vmxon_region* vmx_vmxon_region_create(struct vmm_global_ctx*);
-void vmx_vmxon_region_destroy(struct vmx_vmxon_region*);
+VMXON* vmx_vmxon_region_create(struct vmm_global_ctx*);
+void vmx_vmxon_region_destroy(VMXON* vmxon_region);
 void vmx_set_fixed_bits(struct vmm_cpu_ctx*);
 void vmx_reset_fixed_bits(struct vmm_cpu_ctx*);

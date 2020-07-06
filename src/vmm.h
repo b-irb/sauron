@@ -8,8 +8,8 @@ struct vmx_vmxon_region;
 
 struct vmm_cpu_ctx {
     int processor_id;
-    struct vmcs_vmcs_region* vmcs_region;
-    struct vmx_vmxon_region* vmxon_region;
+    VMCS* vmcs_region;
+    VMXON* vmxon_region;
     /* Physical address of VMCS region. */
     unsigned long vmcs_region_ptr;
     /* Physical address of VMXON region. */
