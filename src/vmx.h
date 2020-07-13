@@ -9,10 +9,9 @@
 #define VMXON_REGION_REQUIRED_PAGES 1
 #define VMXON_REGION_REQUIRED_BYTES PAGE_SIZE* VMXON_REGION_REQUIRED_PAGES
 
-struct vmm_global_ctx;
-struct vmm_cpu_ctx;
+struct cpu_ctx;
 
-VMXON* vmx_vmxon_region_create(struct vmm_global_ctx*);
-void vmx_vmxon_region_destroy(VMXON* vmxon_region);
-void vmx_set_fixed_bits(struct vmm_cpu_ctx*);
-void vmx_reset_fixed_bits(struct vmm_cpu_ctx*);
+VMXON* hv_vmx_vmxon_create(struct cpu_ctx*);
+void hv_vmx_vmxon_destroy(VMXON*);
+void hv_vmx_set_fixed_bits(struct cpu_ctx*);
+void hv_vmx_reset_fixed_bits(struct cpu_ctx*);

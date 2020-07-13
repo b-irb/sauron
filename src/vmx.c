@@ -3,6 +3,7 @@
 #include <asm-generic/errno.h>
 #include <asm/desc.h>
 #include <asm/desc_defs.h>
+#include <asm/msr.h>
 #include <asm/processor-flags.h>
 #include <asm/special_insns.h>
 #include <linux/mm.h>
@@ -11,56 +12,59 @@
 #include <linux/vmalloc.h>
 
 #include "arch.h"
+#include "cpu.h"
 #include "ia32.h"
 #include "utils.h"
 #include "vmm.h"
 
-void vmx_set_fixed_bits(struct vmm_cpu_ctx* cpu_ctx) {
-    CR0 cr0 = {.flags = read_cr0()};
-    CR4 cr4 = {.flags = __read_cr4()};
+static u64 set_required_bits(u64 cr, u64 fixed0, u64 fixed1) {
+    u64 fixed_mask, flexible_mask, fixed_bits, flexible_bits;
 
-    cpu_ctx->unfixed_control_register0 = cr0;
-    cpu_ctx->unfixed_control_register4 = cr4;
+    flexible_mask = fixed0 ^ fixed1;
+    fixed_mask = cr & ~flexible_mask;
 
-    /* IA32_VMX_CR0_FIXED0 and IA32_VMX_CR0_FIXED1 indicate how bits in CR0 may
-     * be set in VMX operation. If bit X is 1 in IA32_VMX_CR0_FIXED0, then that
-     * bit of CR0 is fixed to 1 in VMX operation. If bit X is 0 in
-     * IA32_VMX_CR0_FIXED1, then that bit of CR0 is fixed to 0 in VMX operation.
-     * It is always the case that, if bit X is 1 in IA32_VMX_CR0_FIXED0, then
-     * that bit is also 1 in IA32_VMX_CR0_FIXED1; if bit X is 0 in
-     * IA32_VMX_CR0_FIXED1, then that bit is also 0 in IA32_VMX_CR0_FIXED0. */
-    cr0.flags |= __rdmsr(IA32_VMX_CR0_FIXED0);
-    cr0.flags &= __rdmsr(IA32_VMX_CR0_FIXED1);
+    fixed_bits = (fixed0 | fixed1) & fixed_mask;
+    flexible_bits = flexible_mask & cr;
 
-    /* The IA32_VMX_CR4_FIXED0 and IA32_VMX_CR4_FIXED1 indicate how bits in CR4
-     * may be set in VMX operation. If bit X is 1 in IA32_VMX_CR4_FIXED0, then
-     * that bit of CR4 is fixed to 1 in VMX operation. If bit X is 0 in
-     * IA32_VMX_CR4_FIXED1, then that bit of CR4 is fixed to 0 in VMX operation.
-     * It is always the case that, if bit X is 1 in IA32_VMX_CR4_FIXED0, then
-     * that bit is also 1 in IA32_VMX_CR4_FIXED1; if bit X is 0 in
-     * IA32_VMX_CR4_FIXED1, then that bit is also 0 in IA32_VMX_CR4_FIXED0. */
-    cr4.flags |= __rdmsr(IA32_VMX_CR4_FIXED0);
-    cr4.flags &= __rdmsr(IA32_VMX_CR4_FIXED1);
-
-    write_cr0(cr0.flags);
-    __write_cr4(cr4.flags);
+    return fixed_bits | flexible_bits;
 }
 
-void vmx_reset_fixed_bits(struct vmm_cpu_ctx* cpu_ctx) {
-    write_cr0(cpu_ctx->unfixed_control_register0.flags);
-    __write_cr4(cpu_ctx->unfixed_control_register4.flags);
+void hv_vmx_reset_fixed_bits(struct cpu_ctx* cpu) {
+    native_write_cr0(cpu->unfixed_cr0.flags);
+    native_write_cr4(cpu->unfixed_cr4.flags);
 }
 
-static ssize_t vmx_vmxon_region_init(VMXON* vmxon_region,
-                                     struct vmm_global_ctx* ctx) {
+void hv_vmx_set_fixed_bits(struct cpu_ctx* cpu) {
+    CR0 cr0 = {.flags = native_read_cr0()};
+    CR4 cr4 = {.flags = native_read_cr4()};
+
+    cpu->unfixed_cr0 = cr0;
+    cpu->unfixed_cr4 = cr4;
+
+    cr0.flags =
+        set_required_bits(cr0.flags, native_read_msr(IA32_VMX_CR0_FIXED0),
+                          native_read_msr(IA32_VMX_CR0_FIXED0));
+    cr4.flags =
+        set_required_bits(cr0.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
+                          native_read_msr(IA32_VMX_CR4_FIXED1));
+
+    native_write_cr0(cr0.flags);
+    native_write_cr4(cr4.flags);
+}
+
+void hv_vmx_vmxon_destroy(VMXON* vmxon) {
+    free_pages_exact(vmxon, VMXON_REGION_REQUIRED_PAGES);
+}
+
+static ssize_t vmxon_init(VMXON* vmxon, struct cpu_ctx* cpu) {
     /* Write VMCS revision identifier to bits 30:0 to first 4 bytes, bit 31
      * should be cleared. */
-    vmxon_region->revision_id = (u32)ctx->vmx_capabilities.vmcs_revision_id;
-    vmxon_region->must_be_zero = 0;
+    vmxon->revision_id = (u32)cpu->vmm->vmx_capabilities.vmcs_revision_id;
+    vmxon->must_be_zero = 0;
     return 0;
 }
 
-VMXON* vmx_vmxon_region_create(struct vmm_global_ctx* ctx) {
+VMXON* vmx_vmxon_region_create(struct cpu_ctx* cpu) {
     VMXON* vmxon_region;
 
     /* VMXON region must be allocated in physically contiguous, write-back,
@@ -71,24 +75,18 @@ VMXON* vmx_vmxon_region_create(struct vmm_global_ctx* ctx) {
      * bits beyond the processors physical address width. */
     if (!(vmxon_region =
               alloc_pages_exact(VMXON_REGION_REQUIRED_PAGES, GFP_KERNEL))) {
-        utils_log(err, "processor [%zu]: unable to allocate VMXON region\n",
-                  ctx->n_init_cpus);
+        hv_utils_cpu_log(err, cpu, "unable to allocate VMXON region\n");
         return NULL;
     }
 
     /* Clear allocation in case of dirtied pages. */
     memset(vmxon_region, 0x0, VMXON_REGION_REQUIRED_BYTES);
 
-    if (vmx_vmxon_region_init(vmxon_region, ctx) < 0) {
-        utils_log(err, "processor [%zu] unable to initialise VMXON region\n",
-                  ctx->n_init_cpus);
-        vmx_vmxon_region_destroy(vmxon_region);
+    if (vmxon_init(vmxon_region, cpu) < 0) {
+        hv_utils_cpu_log(err, cpu, "unable to initialise VMXON region\n");
+        hv_vmx_vmxon_destroy(vmxon_region);
         return NULL;
     }
 
     return vmxon_region;
-}
-
-void vmx_vmxon_region_destroy(VMXON* vmxon_region) {
-    free_pages_exact(vmxon_region, VMXON_REGION_REQUIRED_PAGES);
 }

@@ -1,5 +1,7 @@
+#include "utils.h"
+
 #include <linux/types.h>
 
-bool utils_is_bit_set(u64 position, u64 bit_vector) {
-    return (bool)(bit_vector & (1 << position));
+bool hv_utils_is_bit_set(u64 position, u64 vector) {
+    return (bool)(vector & (1 << position));
 }
