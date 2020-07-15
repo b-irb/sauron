@@ -36,6 +36,7 @@ struct hv_arch_cpu_state {
 
     SEGMENT_DESCRIPTOR_REGISTER_64 gdtr;
     SEGMENT_DESCRIPTOR_REGISTER_64 idtr;
+    // SEGMENT_DESCRIPTOR_REGISTER_64 ldtr;
     SEGMENT_SELECTOR seg_cs;
     SEGMENT_SELECTOR seg_ds;
     SEGMENT_SELECTOR seg_es;
@@ -57,12 +58,14 @@ bool hv_arch_cpu_has_vmx(void);
 void hv_arch_enable_vmxe(void);
 void hv_arch_disable_vmxe(void);
 u8 hv_arch_do_vmxoff(void);
-u8 hv_arch_do_vmxon(unsigned long);
-u8 hv_arch_do_vmptrld(unsigned long);
-u8 hv_arch_do_vmclear(unsigned long);
+u8 hv_arch_do_vmxon(phys_addr_t);
+u8 hv_arch_do_vmptrld(phys_addr_t);
+u8 hv_arch_do_vmclear(phys_addr_t);
 u8 hv_arch_do_vmwrite(unsigned long, unsigned long);
+u8 hv_arch_do_vmlaunch(void);
 u64 hv_arch_do_lsl(u16);
 u64 hv_arch_do_lar(u16);
+u64 hv_arch_read_dr7(void);
 
 void hv_arch_capture_cpu_state(struct cpu_ctx*);
 void hv_arch_read_seg_descriptor(struct hv_arch_segment_descriptor*,
