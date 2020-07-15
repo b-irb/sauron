@@ -1,5 +1,6 @@
 #include "vmm.h"
 
+#include <asm-generic/errno.h>
 #include <asm/io.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -44,7 +45,8 @@ static bool is_system_hyperviseable(void) {
 
 static struct vmm_ctx* vmm_ctx_create(void) {
     struct vmm_ctx* vmm;
-    unsigned i = 0;
+    struct cpu_ctx* cpu;
+    int i = 0;
 
     if (!(vmm = kzalloc(sizeof(*vmm), GFP_KERNEL))) {
         hv_utils_log(err, "unable to allocate memory for VMM context\n");
@@ -63,33 +65,40 @@ static struct vmm_ctx* vmm_ctx_create(void) {
     }
 
     for (i = 0; i < vmm->n_online_cpus; ++i) {
-        hv_utils_log(info, "processor [%u]: initialising processor context\n",
-                     i);
-        if (hv_cpu_ctx_init(vmm->each_cpu_ctx[i], vmm) < 0) {
-            hv_utils_log(
-                err, "processor [%u]: failed to initialise processor context\n",
-                i);
+        cpu = &vmm->each_cpu_ctx[i];
+        if (hv_cpu_ctx_init(cpu, vmm) < 0) {
+            hv_utils_log(err, "failed to create processor context\n");
             hv_vmm_ctx_destroy(vmm);
             return NULL;
         }
-        ++vmm->n_init_cpus;
+        vmm->n_init_cpus++;
     }
+
     return vmm;
 }
 
 void hv_vmm_ctx_destroy(struct vmm_ctx* vmm) {
     int i;
     for (i = 0; i < vmm->n_init_cpus; ++i) {
-        hv_cpu_ctx_destroy(vmm->each_cpu_ctx[i]);
+        hv_cpu_ctx_destroy(&vmm->each_cpu_ctx[i]);
     }
     kfree(vmm->each_cpu_ctx);
     kfree(vmm);
 }
 
+static void hv_vmm_stop_cpu_shim(void* info) {
+    struct cpu_ctx* cpu =
+        &((struct vmm_ctx*)info)->each_cpu_ctx[smp_processor_id()];
+    hv_vmx_exit_root(cpu);
+}
+
+void hv_vmm_stop_hypervisor(struct vmm_ctx* vmm) {
+    on_each_cpu(hv_vmm_stop_cpu_shim, vmm, 1);
+    hv_vmm_ctx_destroy(vmm);
+}
+
 struct vmm_ctx* hv_vmm_start_hypervisor(void) {
     struct vmm_ctx* vmm;
-    struct cpu_ctx* cpu;
-    unsigned i = 0;
 
     if (!is_system_hyperviseable()) {
         hv_utils_log(err,
@@ -97,6 +106,8 @@ struct vmm_ctx* hv_vmm_start_hypervisor(void) {
                      "detected\n");
         return NULL;
     }
+    hv_utils_log(info,
+                 "detected all required features for hypervisor operation\n");
 
     if (!(vmm = vmm_ctx_create())) {
         hv_utils_log(err, "unable to create VMM context\n");
@@ -105,14 +116,7 @@ struct vmm_ctx* hv_vmm_start_hypervisor(void) {
 
     on_each_cpu(hv_cpu_init_entry, vmm, 1);
     /* vmlaunch guest resume entry point */
-    /* Remove memory regions for processors that failed to launch. */
-    for (i = 0; i < vmm->n_online_cpus; ++i) {
-        cpu = vmm->each_cpu_ctx[i];
-        if (cpu->failed) {
-            hv_utils_cpu_log(info, cpu, "clearing up processor context\n");
-            hv_cpu_ctx_destroy(cpu);
-        }
-    }
-    return vmm;
+    hv_vmm_stop_hypervisor(vmm);
+    return NULL;
 }
 
