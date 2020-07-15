@@ -22,32 +22,32 @@ static u32 arch_cpuid(u32 leaf, u32 subleaf, u32 target_reg) {
     return regs[target_reg];
 }
 
-static bool arch_cpu_has_feature(u32 leaf, u32 subleaf, u32 target_reg,
-                                 u32 feature_bit) {
-    return utils_is_bit_set(arch_cpuid(leaf, subleaf, target_reg), feature_bit);
+static bool cpu_has_feature(u32 leaf, u32 subleaf, u32 target_reg,
+                            u32 feature_bit) {
+    return hv_utils_is_bit_set(arch_cpuid(leaf, subleaf, target_reg),
+                               feature_bit);
 }
 
 bool hv_arch_cpu_has_vmx(void) {
     /* Check if CPUID.1:ECX.VMX[bit 5] = 1. */
-    return arch_cpu_has_feature(CPUID_VMX_ENABLED_LEAF,
-                                CPUID_VMX_ENABLED_SUBLEAF, CPUID_REGISTER_ECX,
-                                CPUID_VMX_ENABLED_BIT);
+    return cpu_has_feature(CPUID_VMX_ENABLED_LEAF, CPUID_VMX_ENABLED_SUBLEAF,
+                           CPUID_REGISTER_ECX, CPUID_VMX_ENABLED_BIT);
 }
 
 void hv_arch_enable_vmxe() {
-    CR4 cr4 = {.flags = __read_cr4()};
+    CR4 cr4 = {.flags = native_read_cr4()};
     /* To enable VMX, software must ensure CR4.VMXE[bit 13] = 1. Otherwise,
      * VMXON will generate a #UD exception. */
     cr4.vmx_enable = 1;
-    __write_cr4(cr4.flags);
+    native_write_cr4(cr4.flags);
 }
 
 void hv_arch_disable_vmxe(void) {
-    CR4 cr4 = {.flags = __read_cr4()};
+    CR4 cr4 = {.flags = native_read_cr4()};
     /* To disable VMX, software must ensure CR4.VMXE[bit 13] = 0. This will
      * cause VMXON to generate a #UD exception. */
     cr4.vmx_enable = 0;
-    __write_cr4(cr4.flags);
+    native_write_cr4(cr4.flags);
 }
 
 u8 hv_arch_do_vmwrite(unsigned long field, unsigned long value) {
@@ -61,7 +61,7 @@ u8 hv_arch_do_vmwrite(unsigned long field, unsigned long value) {
     return ret;
 }
 
-u8 hv_arch_do_vmclear(unsigned long vmcs_region_ptr) {
+u8 hv_arch_do_vmclear(phys_addr_t vmcs_region_ptr) {
     u8 ret;
     asm volatile(
         "vmclear %[vmcs_region_ptr]\n"
@@ -72,7 +72,7 @@ u8 hv_arch_do_vmclear(unsigned long vmcs_region_ptr) {
     return ret;
 }
 
-u8 hv_arch_do_vmptrld(unsigned long vmcs_region_ptr) {
+u8 hv_arch_do_vmptrld(phys_addr_t vmcs_region_ptr) {
     u8 ret;
     asm volatile(
         "vmptrld %[vmcs_region_ptr]\n"
@@ -95,7 +95,7 @@ u8 hv_arch_do_vmxoff(void) {
     return cf | zf;
 }
 
-u8 hv_arch_do_vmxon(unsigned long vmxon_region_ptr) {
+u8 hv_arch_do_vmxon(phys_addr_t vmxon_region_ptr) {
     u8 ret;
 
     /* Puts the logical processor in VMX operation with no current VMCS.
@@ -108,6 +108,15 @@ u8 hv_arch_do_vmxon(unsigned long vmxon_region_ptr) {
         : "cc", "memory");
 
     return ret;
+}
+
+u8 hv_arch_do_vmlaunch(void) {
+    u8 err;
+    asm volatile(
+        "vmlaunch\n"
+        "setb %[err]\n"
+        : [ err ] "=rm"(err)::"cc", "memory");
+    return err;
 }
 
 u64 hv_arch_do_lar(u16 selector) {
@@ -130,7 +139,7 @@ u64 hv_arch_do_lsl(u16 selector) {
 
 u64 hv_arch_read_dr7(void) {
     u64 out;
-    asm volatile("mov %[out], dr7\n" : [ out ] "=r"(out));
+    asm volatile("mov %[out], %%dr7\n" : [ out ] "=r"(out));
     return out;
 }
 
@@ -141,8 +150,9 @@ void hv_arch_capture_cpu_state(struct cpu_ctx* cpu_ctx) {
     cpu_ctx->state.cr4.flags = native_read_cr4();
     cpu_ctx->state.dr7.flags = hv_arch_read_dr7();
 
-    load_gdt((struct desc_ptr*)&cpu_ctx->state.gdtr);
-    load_idt((struct desc_ptr*)&cpu_ctx->state.idtr);
+    native_store_gdt((struct desc_ptr*)&cpu_ctx->state.gdtr);
+    store_idt((struct desc_ptr*)&cpu_ctx->state.idtr);
+    /*store_ldt((struct desc_ptr*)&cpu_ctx->state.ldtr);*/
 
     cpu_ctx->state.seg_cs.flags = hv_arch_read_cs();
     cpu_ctx->state.seg_ds.flags = hv_arch_read_ds();
@@ -164,6 +174,7 @@ void hv_arch_capture_cpu_state(struct cpu_ctx* cpu_ctx) {
 void hv_arch_read_seg_descriptor(
     struct hv_arch_segment_descriptor* processed_descriptor,
     const SEGMENT_DESCRIPTOR_REGISTER_64 dtr, const SEGMENT_SELECTOR selector) {
+    SEGMENT_DESCRIPTOR_64 descriptor;
     /* A segment selector is a 16-bit identifier for a segment. The segment
      * selector has a 13-bit field at a 3-bit offset. In order to calculate the
      * descriptor table index, we mask the offset then shift.
@@ -178,18 +189,18 @@ void hv_arch_read_seg_descriptor(
      * base_address + (((selector & 0xd) >> 3) << 3)
      * base_address + (selector & 0xd)
      * */
-    const SEGMENT_DESCRIPTOR_64 descriptor =
+    if (!selector.flags || selector.table) {
+        /* We do not attempt to load a descriptor from the current LDT or load a
+         * NULL segment selector, we instead return an unusable VMX segment. */
+        processed_descriptor->access_rights.unusable = 1;
+        return;
+    }
+
+    descriptor =
         *(SEGMENT_DESCRIPTOR_64*)(dtr.base_address + (selector.flags & 0xd));
 
     memset(processed_descriptor, 0x0,
            sizeof(struct hv_arch_segment_descriptor));
-
-    if (!descriptor.flags) {
-        /* We cannot attempt to load a NULL segment selector, we return an
-         * unusable VMX segment. */
-        processed_descriptor->access_rights.unusable = 1;
-        return;
-    }
 
     processed_descriptor->selector = selector;
     processed_descriptor->dtr = dtr;
@@ -217,11 +228,17 @@ void hv_arch_read_seg_descriptor(
     processed_descriptor->access_rights.unusable = 0;
 }
 
-#define DEFINE_READ_SEG_REG(reg)                                    \
-    u16 hv_arch_read_##reg(void) {                                  \
-        u16 out;                                                    \
-        asm volatile("mov " #reg ", %[out]\n" : [ out ] "=r"(out)); \
-        return out;                                                 \
+u16 hv_arch_read_tr(void) {
+    u16 out;
+    asm volatile("str %[out]\n" : [ out ] "=rm"(out));
+    return out;
+}
+
+#define DEFINE_READ_SEG_REG(reg)                                      \
+    u16 hv_arch_read_##reg(void) {                                    \
+        u16 out;                                                      \
+        asm volatile("mov %%" #reg ", %[out]\n" : [ out ] "=r"(out)); \
+        return out;                                                   \
     }
 
 DEFINE_READ_SEG_REG(cs)
@@ -230,4 +247,3 @@ DEFINE_READ_SEG_REG(ds)
 DEFINE_READ_SEG_REG(es)
 DEFINE_READ_SEG_REG(fs)
 DEFINE_READ_SEG_REG(gs)
-DEFINE_READ_SEG_REG(tr)
