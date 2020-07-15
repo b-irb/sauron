@@ -2,7 +2,9 @@
 
 #include <asm/desc.h>
 #include <asm/processor.h>
+#include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/types.h>
 
 #include "arch.h"
@@ -15,16 +17,19 @@ void hv_vmcs_vmcs_destroy(VMCS* vmcs) {
     free_pages_exact(vmcs, VMCS_REGION_REQUIRED_PAGES);
 }
 
-VMCS* hv_vmcs_vmcs_alloc(struct cpu_ctx* cpu) {
+VMCS* hv_vmcs_vmcs_create(struct cpu_ctx* cpu) {
     VMCS* vmcs_region;
 
     if (!(vmcs_region =
-              alloc_pages_exact(VMCS_REGION_REQUIRED_PAGES, GFP_KERNEL))) {
+              alloc_pages_exact(VMCS_REGION_REQUIRED_BYTES, GFP_KERNEL))) {
         hv_utils_cpu_log(err, cpu, "unable to allocate VMCS region\n");
         return NULL;
     }
 
     memset(vmcs_region, 0x0, VMCS_REGION_REQUIRED_BYTES);
+
+    vmcs_region->revision_id = (u32)cpu->vmm->vmx_capabilities.vmcs_revision_id;
+    vmcs_region->shadow_vmcs_indicator = 0;
     return vmcs_region;
 }
 
