@@ -152,7 +152,6 @@ void hv_arch_capture_cpu_state(struct cpu_ctx* cpu_ctx) {
 
     native_store_gdt((struct desc_ptr*)&cpu_ctx->state.gdtr);
     store_idt((struct desc_ptr*)&cpu_ctx->state.idtr);
-    /*store_ldt((struct desc_ptr*)&cpu_ctx->state.ldtr);*/
 
     cpu_ctx->state.seg_cs.flags = hv_arch_read_cs();
     cpu_ctx->state.seg_ds.flags = hv_arch_read_ds();

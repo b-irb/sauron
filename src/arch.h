@@ -36,7 +36,6 @@ struct hv_arch_cpu_state {
 
     SEGMENT_DESCRIPTOR_REGISTER_64 gdtr;
     SEGMENT_DESCRIPTOR_REGISTER_64 idtr;
-    // SEGMENT_DESCRIPTOR_REGISTER_64 ldtr;
     SEGMENT_SELECTOR seg_cs;
     SEGMENT_SELECTOR seg_ds;
     SEGMENT_SELECTOR seg_es;
