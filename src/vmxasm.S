@@ -1,4 +1,7 @@
-.extern hv_vmm_init_cpu
+#include <linux/linkage.h>
+#include <asm/export.h>
+
+.extern hv_cpu_init
 
 // https://github.com/asamy/ksm/blob/e7e24931c9df26c33d6e2a0ea9a44c78d3ced7a6/vmx.S#L59
 // RSP is read from VMCS.
@@ -42,12 +45,9 @@
 	popq %rbp
 .endm
 
-.section .text
-.extern hv_vmm_cpu_init
-.globl hv_vmm_init_cpu_entry
-.globl hv_vmx_guest_resume
+.text
 
-hv_vmm_init_cpu_entry:
+SYM_FUNC_START(hv_cpu_init_entry)
 	store_cpu_state
 
 	// %rdi contains the vmm_gloabl_ctx structure
@@ -57,16 +57,20 @@ hv_vmm_init_cpu_entry:
 	movq %rsp, %rdx
 	// x64 alloc shadow stack
 	subq $0x20, %rsp
-	// hv_vmm_init_cpu does not return if vmlaunch is executed successfully.
-	// If vmlaunch fails to execute, hv_vmm_init_cpu_entry returns with an
+	// hv_cpu_init does not return if vmlaunch is executed successfully.
+	// If vmlaunch fails to execute, hv_cpu_init_entry returns with an
 	// error indication.
-	call hv_vmm_init_cpu
+	call hv_cpu_init
 	// x64 dealloc shadow stack
 	addq $0x20, %rsp
 
 	restore_cpu_state
 	ret
+SYM_FUNC_END(hv_cpu_init_entry)
+EXPORT_SYMBOL(hv_cpu_init_entry)
 
-hv_vmx_guest_resume:
+SYM_FUNC_START(hv_vmx_guest_resume)
 	restore_cpu_state
 	ret
+SYM_FUNC_END(hv_vmx_guest_resume)
+EXPORT_SYMBOL(hv_vmx_guest_resume)
