@@ -16,9 +16,9 @@ struct cpu_ctx {
     u64 resume_sp;
     u64 resume_ip;
     VMXON* vmxon_region;
-    unsigned long vmxon_region_ptr;
+    phys_addr_t vmxon_region_ptr;
     VMCS* vmcs_region;
-    unsigned long vmcs_region_ptr;
+    phys_addr_t vmcs_region_ptr;
 
     CR0 unfixed_cr0;
     CR4 unfixed_cr4;
@@ -26,3 +26,4 @@ struct cpu_ctx {
 
 ssize_t hv_cpu_ctx_init(struct cpu_ctx*, struct vmm_ctx*);
 void hv_cpu_ctx_destroy(struct cpu_ctx* ctx);
+void hv_cpu_init(void*, u64, u64);
