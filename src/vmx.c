@@ -25,16 +25,15 @@ static u64 set_required_bits(u64 cr, u64 fixed0, u64 fixed1) {
 
     fixed_bits = (fixed0 | fixed1) & fixed_mask;
     flexible_bits = flexible_mask & cr;
-
     return fixed_bits | flexible_bits;
 }
 
-void hv_vmx_reset_fixed_bits(struct cpu_ctx* cpu) {
+static void reset_fixed_bits(struct cpu_ctx* cpu) {
     native_write_cr0(cpu->unfixed_cr0.flags);
     native_write_cr4(cpu->unfixed_cr4.flags);
 }
 
-void hv_vmx_set_fixed_bits(struct cpu_ctx* cpu) {
+static void set_fixed_bits(struct cpu_ctx* cpu) {
     CR0 cr0 = {.flags = native_read_cr0()};
     CR4 cr4 = {.flags = native_read_cr4()};
 
@@ -43,28 +42,75 @@ void hv_vmx_set_fixed_bits(struct cpu_ctx* cpu) {
 
     cr0.flags =
         set_required_bits(cr0.flags, native_read_msr(IA32_VMX_CR0_FIXED0),
-                          native_read_msr(IA32_VMX_CR0_FIXED0));
+                          native_read_msr(IA32_VMX_CR0_FIXED1));
     cr4.flags =
-        set_required_bits(cr0.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
+        set_required_bits(cr4.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
                           native_read_msr(IA32_VMX_CR4_FIXED1));
 
     native_write_cr0(cr0.flags);
     native_write_cr4(cr4.flags);
 }
 
+void hv_vmx_launch_cpu(struct cpu_ctx* cpu) {
+    hv_arch_do_vmlaunch();
+    /* If execution continues, vmlaunch failed. */
+    hv_utils_cpu_log(err, cpu, "vmlaunch failed\n");
+
+    hv_vmx_exit_root(cpu);
+    hv_cpu_ctx_destroy(cpu);
+    cpu->failed = true;
+}
+
+ssize_t hv_vmx_exit_root(struct cpu_ctx* cpu) {
+    /*
+     *    if (hv_arch_do_vmclear(cpu->vmcs_region_ptr)) {
+     *        hv_utils_cpu_log(err, cpu,
+     *                         "failed to execute VMCLEAR while exiting VMX
+     * root\n"); return -1;
+     *    }
+     *
+     *    hv_arch_do_vmxoff();
+     */
+    hv_arch_do_vmxoff();
+    hv_arch_disable_vmxe();
+    reset_fixed_bits(cpu);
+    return 0;
+}
+
+ssize_t hv_vmx_enter_root(struct cpu_ctx* cpu) {
+    hv_arch_enable_vmxe();
+    hv_utils_cpu_log(debug, cpu, "successfully enabled VMXE\n");
+    set_fixed_bits(cpu);
+
+    hv_utils_cpu_log(debug, cpu, "vmxon with addr=%pa[p]\n",
+                     &cpu->vmxon_region_ptr);
+    if (hv_arch_do_vmxon(cpu->vmxon_region_ptr)) {
+        hv_utils_cpu_log(err, cpu, "failed to execute VMXON\n");
+        return -1;
+    }
+
+    hv_utils_cpu_log(debug, cpu, "vmclear with addr=%pa[p]\n",
+                     &cpu->vmcs_region_ptr);
+    if (hv_arch_do_vmclear(cpu->vmcs_region_ptr)) {
+        hv_utils_cpu_log(info, cpu, "failed to execute VMCLEAR\n");
+        return -1;
+    }
+
+    hv_utils_cpu_log(debug, cpu, "vmptrld with addr=%pa[p]\n",
+                     &cpu->vmcs_region_ptr);
+
+    if (hv_arch_do_vmptrld(cpu->vmcs_region_ptr)) {
+        hv_utils_cpu_log(info, cpu, "failed to execute VMPTRLD\n");
+        return -1;
+    }
+    return 0;
+}
+
 void hv_vmx_vmxon_destroy(VMXON* vmxon) {
     free_pages_exact(vmxon, VMXON_REGION_REQUIRED_PAGES);
 }
 
-static ssize_t vmxon_init(VMXON* vmxon, struct cpu_ctx* cpu) {
-    /* Write VMCS revision identifier to bits 30:0 to first 4 bytes, bit 31
-     * should be cleared. */
-    vmxon->revision_id = (u32)cpu->vmm->vmx_capabilities.vmcs_revision_id;
-    vmxon->must_be_zero = 0;
-    return 0;
-}
-
-VMXON* vmx_vmxon_region_create(struct cpu_ctx* cpu) {
+VMXON* hv_vmx_vmxon_create(struct cpu_ctx* cpu) {
     VMXON* vmxon_region;
 
     /* VMXON region must be allocated in physically contiguous, write-back,
@@ -74,7 +120,7 @@ VMXON* vmx_vmxon_region_create(struct cpu_ctx* cpu) {
      * Additionally, the VMXON pointer must be 4K aligned and must not set any
      * bits beyond the processors physical address width. */
     if (!(vmxon_region =
-              alloc_pages_exact(VMXON_REGION_REQUIRED_PAGES, GFP_KERNEL))) {
+              alloc_pages_exact(VMXON_REGION_REQUIRED_BYTES, GFP_KERNEL))) {
         hv_utils_cpu_log(err, cpu, "unable to allocate VMXON region\n");
         return NULL;
     }
@@ -82,11 +128,10 @@ VMXON* vmx_vmxon_region_create(struct cpu_ctx* cpu) {
     /* Clear allocation in case of dirtied pages. */
     memset(vmxon_region, 0x0, VMXON_REGION_REQUIRED_BYTES);
 
-    if (vmxon_init(vmxon_region, cpu) < 0) {
-        hv_utils_cpu_log(err, cpu, "unable to initialise VMXON region\n");
-        hv_vmx_vmxon_destroy(vmxon_region);
-        return NULL;
-    }
-
+    /* Write VMCS revision identifier to bits 30:0 to first 4 bytes, bit 31
+     * should be cleared. */
+    vmxon_region->revision_id =
+        (u32)cpu->vmm->vmx_capabilities.vmcs_revision_id;
+    vmxon_region->must_be_zero = 0;
     return vmxon_region;
 }
