@@ -74,6 +74,7 @@ ssize_t hv_vmx_exit_root(struct cpu_ctx* cpu) {
     hv_arch_do_vmxoff();
     hv_arch_disable_vmxe();
     reset_fixed_bits(cpu);
+    hv_utils_cpu_log(info, cpu, "successfully exited VMX root operation\n");
     return 0;
 }
 
