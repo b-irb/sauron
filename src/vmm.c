@@ -116,7 +116,6 @@ struct vmm_ctx* hv_vmm_start_hypervisor(void) {
 
     on_each_cpu(hv_cpu_init_entry, vmm, 1);
     /* vmlaunch guest resume entry point */
-    hv_vmm_stop_hypervisor(vmm);
-    return NULL;
+    return vmm;
 }
 
