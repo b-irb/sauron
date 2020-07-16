@@ -15,6 +15,11 @@
 #include "ia32.h"
 #include "utils.h"
 
+#define PARSE_SELECTOR(cpu, selector)                           \
+    hv_arch_read_seg_descriptor(&cpu_ctx->state.seg_##selector, \
+                                cpu_ctx->state.gdtr,            \
+                                (SEGMENT_SELECTOR)hv_arch_read_##selector());
+
 static u32 arch_cpuid(u32 leaf, u32 subleaf, u32 target_reg) {
     u32 regs[4];
 
@@ -143,7 +148,13 @@ u64 hv_arch_read_dr7(void) {
     return out;
 }
 
+void hv_arch_do_sldt(SEGMENT_SELECTOR* out) {
+    asm volatile("sldt %[out]\n" : [ out ] "=m"(out));
+}
+
 void hv_arch_capture_cpu_state(struct cpu_ctx* cpu_ctx) {
+    SEGMENT_SELECTOR ldtr;
+
     cpu_ctx->state.regs = *task_pt_regs(get_current());
     cpu_ctx->state.cr0.flags = native_read_cr0();
     cpu_ctx->state.cr3.flags = __native_read_cr3();
@@ -153,13 +164,20 @@ void hv_arch_capture_cpu_state(struct cpu_ctx* cpu_ctx) {
     native_store_gdt((struct desc_ptr*)&cpu_ctx->state.gdtr);
     store_idt((struct desc_ptr*)&cpu_ctx->state.idtr);
 
-    cpu_ctx->state.seg_cs.flags = hv_arch_read_cs();
-    cpu_ctx->state.seg_ds.flags = hv_arch_read_ds();
-    cpu_ctx->state.seg_es.flags = hv_arch_read_es();
-    cpu_ctx->state.seg_ss.flags = hv_arch_read_ss();
-    cpu_ctx->state.seg_gs.flags = hv_arch_read_gs();
-    cpu_ctx->state.seg_fs.flags = hv_arch_read_fs();
-    cpu_ctx->state.task_register.flags = hv_arch_read_tr();
+    hv_arch_do_sldt(&ldtr);
+    hv_arch_read_seg_descriptor(&cpu_ctx->state.ldtr, cpu_ctx->state.gdtr,
+                                ldtr);
+
+    PARSE_SELECTOR(cpu, cs)
+    PARSE_SELECTOR(cpu, ds)
+    PARSE_SELECTOR(cpu, es)
+    PARSE_SELECTOR(cpu, ss)
+    PARSE_SELECTOR(cpu, gs)
+    PARSE_SELECTOR(cpu, fs)
+
+    hv_arch_read_seg_descriptor(&cpu_ctx->state.task_register,
+                                cpu_ctx->state.gdtr,
+                                (SEGMENT_SELECTOR)hv_arch_read_tr());
 
     cpu_ctx->state.seg_gs_base = native_read_msr(IA32_GS_BASE);
     cpu_ctx->state.seg_fs_base = native_read_msr(IA32_FS_BASE);

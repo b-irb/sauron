@@ -36,13 +36,14 @@ struct hv_arch_cpu_state {
 
     SEGMENT_DESCRIPTOR_REGISTER_64 gdtr;
     SEGMENT_DESCRIPTOR_REGISTER_64 idtr;
-    SEGMENT_SELECTOR seg_cs;
-    SEGMENT_SELECTOR seg_ds;
-    SEGMENT_SELECTOR seg_es;
-    SEGMENT_SELECTOR seg_ss;
-    SEGMENT_SELECTOR seg_gs;
-    SEGMENT_SELECTOR seg_fs;
-    SEGMENT_SELECTOR task_register;
+    struct hv_arch_segment_descriptor seg_cs;
+    struct hv_arch_segment_descriptor seg_ds;
+    struct hv_arch_segment_descriptor seg_es;
+    struct hv_arch_segment_descriptor seg_ss;
+    struct hv_arch_segment_descriptor seg_gs;
+    struct hv_arch_segment_descriptor seg_fs;
+    struct hv_arch_segment_descriptor task_register;
+    struct hv_arch_segment_descriptor ldtr;
     u64 seg_gs_base;
     u64 seg_fs_base;
 
@@ -64,6 +65,7 @@ u8 hv_arch_do_vmwrite(unsigned long, unsigned long);
 u8 hv_arch_do_vmlaunch(void);
 u64 hv_arch_do_lsl(u16);
 u64 hv_arch_do_lar(u16);
+void hv_arch_do_sldt(SEGMENT_SELECTOR*);
 u64 hv_arch_read_dr7(void);
 
 void hv_arch_capture_cpu_state(struct cpu_ctx*);
