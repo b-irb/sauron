@@ -9,6 +9,9 @@
 #define VMXON_REGION_REQUIRED_PAGES 2
 #define VMXON_REGION_REQUIRED_BYTES PAGE_SIZE* VMXON_REGION_REQUIRED_PAGES
 
+/* Hypervisor stack size for vmexits. */
+#define VMX_VMEXIT_STACK_SIZE PAGE_SIZE
+
 struct cpu_ctx;
 
 void hv_vmx_launch_cpu(struct cpu_ctx*);
