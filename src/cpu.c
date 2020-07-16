@@ -13,7 +13,7 @@
 #include "vmx.h"
 
 void hv_cpu_ctx_destroy(struct cpu_ctx* cpu) {
-    kfree(cpu->vmexit_handler_stack);
+    kfree(cpu->vmexit_stack);
     hv_vmx_vmxon_destroy(cpu->vmxon_region);
     hv_vmcs_vmcs_destroy(cpu->vmcs_region);
 }
@@ -27,11 +27,13 @@ ssize_t hv_cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
     }
     memset(cpu->msr_bitmap, 0x0, PAGE_SIZE);
 
-    if (!(cpu->vmexit_handler_stack =
-              kmalloc(VMEXIT_HANDLER_STACK_SIZE, GFP_KERNEL))) {
-        hv_utils_cpu_log(err, cpu, "unable to allocate VMEXIT handler stack\n");
+    if (!(cpu->vmexit_stack =
+              kmalloc(sizeof(*cpu->vmexit_stack), GFP_KERNEL))) {
+        hv_utils_cpu_log(err, cpu, "unable to allocate VMEXIT stack\n");
         goto stack_err;
     }
+    cpu->vmexit_stack->cpu = cpu;
+
     if (!(cpu->vmxon_region = hv_vmx_vmxon_create(cpu))) {
         hv_utils_cpu_log(err, cpu, "unable to create VMXON region\n");
         goto vmxon_err;
@@ -39,10 +41,11 @@ ssize_t hv_cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
 
     if (!(cpu->vmcs_region = hv_vmcs_vmcs_create(cpu))) {
         hv_utils_cpu_log(err, cpu, "unable to allocate VMCS region\n");
-        hv_vmx_vmxon_destroy(cpu->vmxon_region);
         goto vmcs_err;
     }
 
+    /* Our stack includes the cpu_ctx structure for easy accessibility from
+     * within the handler. */
     cpu->vmexit_handler = hv_exit_vmexit_handler;
     cpu->msr_bitmap_ptr = virt_to_phys(cpu->msr_bitmap);
     cpu->vmcs_region_ptr = virt_to_phys(cpu->vmcs_region);
@@ -53,9 +56,9 @@ ssize_t hv_cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
 vmcs_err:
     hv_vmx_vmxon_destroy(cpu->vmxon_region);
 vmxon_err:
-    kfree(cpu->vmexit_handler_stack);
-stack_err:
     free_pages_exact(cpu->msr_bitmap, PAGE_SIZE);
+stack_err:
+    kfree(cpu->msr_bitmap);
 msr_err:
     return -ENOMEM;
 }
@@ -87,7 +90,7 @@ void hv_cpu_init(void* info, u64 ip, u64 sp) {
         return;
     }
     hv_utils_cpu_log(info, cpu, "successfully setup the VMCS\n");
-    /*hv_utils_cpu_log(info, cpu, "executing VMLAUNCH\n");*/
+    hv_utils_cpu_log(info, cpu, "executing VMLAUNCH\n");
 
     /* hv_vmx_launch_cpu does not return if vmlaunch is successfully
      * executed. */

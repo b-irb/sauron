@@ -4,10 +4,14 @@
 
 #include "arch.h"
 #include "ia32.h"
+#include "vmx.h"
 
 struct vmm_ctx;
 
 struct cpu_ctx {
+    void* vmexit_handler;
+    struct cpu_ctx_stack* vmexit_stack;
+
     struct vmm_ctx* vmm;
     unsigned processor_id;
     bool failed;
@@ -16,9 +20,6 @@ struct cpu_ctx {
     CR4 unfixed_cr4;
 
     struct hv_arch_cpu_state state;
-
-    void* vmexit_handler;
-    void* vmexit_handler_stack;
 
     u64 resume_sp;
     u64 resume_ip;
@@ -29,6 +30,13 @@ struct cpu_ctx {
     phys_addr_t msr_bitmap_ptr;
     phys_addr_t vmxon_region_ptr;
     phys_addr_t vmcs_region_ptr;
+};
+
+struct cpu_ctx_stack {
+    /* This forms the vmexit handler stack, it must be at the start of the
+     * struct. */
+    u8 vmexit_handler_stack[VMX_VMEXIT_STACK_SIZE];
+    struct cpu_ctx* cpu;
 };
 
 ssize_t hv_cpu_ctx_init(struct cpu_ctx*, struct vmm_ctx*);
