@@ -17,17 +17,6 @@
 #include "utils.h"
 #include "vmm.h"
 
-static u64 set_required_bits(u64 cr, u64 fixed0, u64 fixed1) {
-    u64 fixed_mask, flexible_mask, fixed_bits, flexible_bits;
-
-    flexible_mask = fixed0 ^ fixed1;
-    fixed_mask = cr & ~flexible_mask;
-
-    fixed_bits = (fixed0 | fixed1) & fixed_mask;
-    flexible_bits = flexible_mask & cr;
-    return fixed_bits | flexible_bits;
-}
-
 static void reset_fixed_bits(struct cpu_ctx* cpu) {
     native_write_cr0(cpu->unfixed_cr0.flags);
     native_write_cr4(cpu->unfixed_cr4.flags);
@@ -40,12 +29,12 @@ static void set_fixed_bits(struct cpu_ctx* cpu) {
     cpu->unfixed_cr0 = cr0;
     cpu->unfixed_cr4 = cr4;
 
-    cr0.flags =
-        set_required_bits(cr0.flags, native_read_msr(IA32_VMX_CR0_FIXED0),
-                          native_read_msr(IA32_VMX_CR0_FIXED1));
-    cr4.flags =
-        set_required_bits(cr4.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
-                          native_read_msr(IA32_VMX_CR4_FIXED1));
+    cr0.flags = hv_utils_set_required_bits(
+        cr0.flags, native_read_msr(IA32_VMX_CR0_FIXED0),
+        native_read_msr(IA32_VMX_CR0_FIXED1));
+    cr4.flags = hv_utils_set_required_bits(
+        cr4.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
+        native_read_msr(IA32_VMX_CR4_FIXED1));
 
     native_write_cr0(cr0.flags);
     native_write_cr4(cr4.flags);
