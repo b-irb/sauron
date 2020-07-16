@@ -12,28 +12,25 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("birb007");
 MODULE_DESCRIPTION("Simple Intel VT-x hypervisor for Linux.");
 
-static int action_no;
+static int opt_enable_hypervisor_no;
 static int hv_is_enabled;
 static struct vmm_ctx* vmm;
 
 static ssize_t hv_enable(void) {
-    int ret;
-
     if (hv_is_enabled) {
         return 0;
     }
 
     hv_utils_log(info, "enabling hypervisor\n");
     if (!(vmm = hv_vmm_start_hypervisor())) {
-        hv_is_enabled = 1;
+        hv_utils_log(err, "hypervisor failed\n");
+        return -1;
     }
-
-    return ret;
+    hv_is_enabled = 1;
+    return 0;
 }
 
 static ssize_t hv_disable(void) {
-    int ret;
-
     if (!hv_is_enabled) {
         return 0;
     }
@@ -41,23 +38,24 @@ static ssize_t hv_disable(void) {
     hv_utils_log(info, "disabling hypervisor\n");
     hv_vmm_stop_hypervisor(vmm);
     hv_is_enabled = 0;
-
-    return ret;
+    return 0;
 }
 
-static ssize_t action_show(struct kobject* kobj, struct kobj_attribute* attr,
-                           char* buf) {
-    return sprintf(buf, "%d\n", action_no);
+static ssize_t opt_enable_hypervisor_show(struct kobject* kobj,
+                                          struct kobj_attribute* attr,
+                                          char* buf) {
+    return sprintf(buf, "%d\n", opt_enable_hypervisor_no);
 }
 
-static ssize_t action_set(struct kobject* kobj, struct kobj_attribute* attr,
-                          const char* buf, size_t count) {
+static ssize_t opt_enable_hypervisor_set(struct kobject* kobj,
+                                         struct kobj_attribute* attr,
+                                         const char* buf, size_t count) {
     int ret;
-    if ((ret = kstrtoint(buf, 10, &action_no)) < 0) {
+    if ((ret = kstrtoint(buf, 10, &opt_enable_hypervisor_no)) < 0) {
         return ret;
     }
 
-    switch (action_no) {
+    switch (opt_enable_hypervisor_no) {
         case 0:
             ret = hv_disable();
             break;
@@ -76,7 +74,7 @@ static ssize_t action_set(struct kobject* kobj, struct kobj_attribute* attr,
 }
 
 static struct kobj_attribute do_action =
-    __ATTR(action, 0664, action_show, action_set);
+    __ATTR(action, 0664, opt_enable_hypervisor_show, opt_enable_hypervisor_set);
 
 static struct attribute* attrs[] = {&do_action.attr, NULL};
 
