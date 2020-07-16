@@ -44,6 +44,7 @@ ssize_t hv_cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
     }
 
     cpu->vmexit_handler = hv_exit_vmexit_handler;
+    cpu->msr_bitmap_ptr = virt_to_phys(cpu->msr_bitmap);
     cpu->vmcs_region_ptr = virt_to_phys(cpu->vmcs_region);
     cpu->vmxon_region_ptr = virt_to_phys(cpu->vmxon_region);
     cpu->failed = false;

@@ -17,15 +17,16 @@ struct cpu_ctx {
 
     struct hv_arch_cpu_state state;
 
-    VMX_MSR_BITMAP* msr_bitmap;
     void* vmexit_handler;
     void* vmexit_handler_stack;
 
     u64 resume_sp;
     u64 resume_ip;
 
+    VMX_MSR_BITMAP* msr_bitmap;
     VMXON* vmxon_region;
     VMCS* vmcs_region;
+    phys_addr_t msr_bitmap_ptr;
     phys_addr_t vmxon_region_ptr;
     phys_addr_t vmcs_region_ptr;
 };
