@@ -35,7 +35,7 @@ struct cpu_ctx {
 struct cpu_ctx_stack {
     /* This forms the vmexit handler stack, it must be at the start of the
      * struct. */
-    u8 vmexit_handler_stack[VMX_VMEXIT_STACK_SIZE];
+    u8 vmexit_handler_stack[VMX_VMEXIT_STACK_SIZE - sizeof(struct cpu_ctx*)];
     struct cpu_ctx* cpu;
 };
 
