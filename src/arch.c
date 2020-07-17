@@ -192,6 +192,14 @@ void hv_arch_read_seg_descriptor(
     struct hv_arch_segment_descriptor* processed_descriptor,
     const SEGMENT_DESCRIPTOR_REGISTER_64 dtr, const SEGMENT_SELECTOR selector) {
     SEGMENT_DESCRIPTOR_64 descriptor;
+
+    if (!selector.flags || selector.table) {
+        /* We do not attempt to load a descriptor from the current LDT or load a
+         * NULL segment selector, we instead return an unusable VMX segment. */
+        processed_descriptor->access_rights.unusable = 1;
+        return;
+    }
+
     /* A segment selector is a 16-bit identifier for a segment. The segment
      * selector has a 13-bit field at a 3-bit offset. In order to calculate the
      * descriptor table index, we mask the offset then shift.
@@ -206,13 +214,6 @@ void hv_arch_read_seg_descriptor(
      * base_address + (((selector & 0xd) >> 3) << 3)
      * base_address + (selector & 0xd)
      * */
-    if (!selector.flags || selector.table) {
-        /* We do not attempt to load a descriptor from the current LDT or load a
-         * NULL segment selector, we instead return an unusable VMX segment. */
-        processed_descriptor->access_rights.unusable = 1;
-        return;
-    }
-
     descriptor =
         *(SEGMENT_DESCRIPTOR_64*)(dtr.base_address + (selector.flags & 0xd));
 
