@@ -11,9 +11,10 @@
 #include "vmcs.h"
 #include "vmm.h"
 #include "vmx.h"
+#include "vmxasm.h"
 
 void hv_cpu_ctx_destroy(struct cpu_ctx* cpu) {
-    kfree(cpu->vmexit_stack);
+    free_pages_exact(cpu->vmexit_stack, VMX_VMEXIT_STACK_SIZE);
     hv_vmx_vmxon_destroy(cpu->vmxon_region);
     hv_vmcs_vmcs_destroy(cpu->vmcs_region);
 }
@@ -28,7 +29,7 @@ ssize_t hv_cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
     memset(cpu->msr_bitmap, 0x0, PAGE_SIZE);
 
     if (!(cpu->vmexit_stack =
-              kmalloc(sizeof(*cpu->vmexit_stack), GFP_KERNEL))) {
+              alloc_pages_exact(VMX_VMEXIT_STACK_SIZE, GFP_KERNEL))) {
         hv_utils_cpu_log(err, cpu, "unable to allocate VMEXIT stack\n");
         goto stack_err;
     }
@@ -46,7 +47,7 @@ ssize_t hv_cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
 
     /* Our stack includes the cpu_ctx structure for easy accessibility from
      * within the handler. */
-    cpu->vmexit_handler = hv_exit_vmexit_handler;
+    cpu->vmexit_handler = &hv_exit_vmexit_entry;
     cpu->msr_bitmap_ptr = virt_to_phys(cpu->msr_bitmap);
     cpu->vmcs_region_ptr = virt_to_phys(cpu->vmcs_region);
     cpu->vmxon_region_ptr = virt_to_phys(cpu->vmxon_region);
