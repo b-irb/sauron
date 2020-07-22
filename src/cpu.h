@@ -27,9 +27,6 @@ struct cpu_ctx {
     VMX_MSR_BITMAP* msr_bitmap;
     VMXON* vmxon_region;
     VMCS* vmcs_region;
-    phys_addr_t msr_bitmap_ptr;
-    phys_addr_t vmxon_region_ptr;
-    phys_addr_t vmcs_region_ptr;
 };
 
 struct cpu_ctx_stack {
