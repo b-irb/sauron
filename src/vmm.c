@@ -54,6 +54,7 @@ static struct vmm_ctx* vmm_ctx_create(void) {
     }
 
     vmm->n_online_cpus = num_online_cpus();
+    vmm->n_init_cpus = 0;
     vmm->vmx_capabilities.flags = native_read_msr(IA32_VMX_BASIC);
 
     if (!(vmm->each_cpu_ctx = kzalloc(
@@ -71,16 +72,19 @@ static struct vmm_ctx* vmm_ctx_create(void) {
             hv_vmm_ctx_destroy(vmm);
             return NULL;
         }
-        vmm->n_init_cpus++;
     }
 
     return vmm;
 }
 
 void hv_vmm_ctx_destroy(struct vmm_ctx* vmm) {
+    struct cpu_ctx* cpu;
     int i;
-    for (i = 0; i < vmm->n_init_cpus; ++i) {
-        hv_cpu_ctx_destroy(&vmm->each_cpu_ctx[i]);
+    for (i = 0; i < vmm->n_online_cpus; ++i) {
+        cpu = &vmm->each_cpu_ctx[i];
+        if (!cpu->failed) {
+            hv_cpu_ctx_destroy(cpu);
+        }
     }
     kfree(vmm->each_cpu_ctx);
     kfree(vmm);
@@ -89,7 +93,9 @@ void hv_vmm_ctx_destroy(struct vmm_ctx* vmm) {
 static void hv_vmm_stop_cpu_shim(void* info) {
     struct cpu_ctx* cpu =
         &((struct vmm_ctx*)info)->each_cpu_ctx[smp_processor_id()];
-    hv_vmx_exit_root(cpu);
+    if (!cpu->failed) {
+        hv_vmx_exit_root(cpu);
+    }
 }
 
 void hv_vmm_stop_hypervisor(struct vmm_ctx* vmm) {
@@ -99,6 +105,8 @@ void hv_vmm_stop_hypervisor(struct vmm_ctx* vmm) {
 
 struct vmm_ctx* hv_vmm_start_hypervisor(void) {
     struct vmm_ctx* vmm;
+    struct cpu_ctx* cpu;
+    int i;
 
     if (!is_system_hyperviseable()) {
         hv_utils_log(err,
@@ -116,6 +124,13 @@ struct vmm_ctx* hv_vmm_start_hypervisor(void) {
 
     on_each_cpu(hv_cpu_init_entry, vmm, 1);
     /* vmlaunch guest resume entry point */
+
+    for (i = 0; i < vmm->n_online_cpus; ++i) {
+        cpu = &vmm->each_cpu_ctx[i];
+        if (!cpu->failed) {
+            vmm->n_init_cpus++;
+        }
+    }
     return vmm;
 }
 

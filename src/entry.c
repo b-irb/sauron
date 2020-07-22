@@ -22,11 +22,16 @@ static ssize_t hv_enable(void) {
     }
 
     hv_utils_log(info, "enabling hypervisor\n");
+
     if (!(vmm = hv_vmm_start_hypervisor())) {
-        hv_utils_log(err, "hypervisor failed\n");
+        hv_utils_log(err, "failed to enable hypervisor\n");
         return -1;
     }
     hv_is_enabled = 1;
+
+    hv_utils_log(info,
+                 "successfully enabled the hypervisor for %u/%u processors\n",
+                 vmm->n_init_cpus, vmm->n_online_cpus);
     return 0;
 }
 
