@@ -23,6 +23,7 @@ struct cpu_ctx {
 
     u64 resume_sp;
     u64 resume_ip;
+    u64 resume_flags;
 
     VMX_MSR_BITMAP* msr_bitmap;
     VMXON* vmxon_region;
@@ -36,6 +37,8 @@ struct cpu_ctx_stack {
     struct cpu_ctx* cpu;
 };
 
-ssize_t hv_cpu_ctx_init(struct cpu_ctx*, struct vmm_ctx*);
+/*
+ *ssize_t hv_cpu_ctx_init(struct cpu_ctx*, struct vmm_ctx*);
+ */
 void hv_cpu_ctx_destroy(struct cpu_ctx* ctx);
-void hv_cpu_init(void*, u64, u64);
+void hv_cpu_init(void*, u64, u64, u64);
