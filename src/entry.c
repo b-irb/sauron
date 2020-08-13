@@ -68,7 +68,7 @@ static ssize_t opt_enable_hypervisor_set(struct kobject* kobj,
             ret = hv_enable();
             break;
         default:
-            hv_utils_log(err, "invalid action\n");
+            hv_utils_log(err, "invalid value\n");
             ret = -EINVAL;
     }
 
@@ -78,10 +78,10 @@ static ssize_t opt_enable_hypervisor_set(struct kobject* kobj,
     return count;
 }
 
-static struct kobj_attribute do_action =
-    __ATTR(action, 0664, opt_enable_hypervisor_show, opt_enable_hypervisor_set);
+static struct kobj_attribute do_enable =
+    __ATTR(enable, 0664, opt_enable_hypervisor_show, opt_enable_hypervisor_set);
 
-static struct attribute* attrs[] = {&do_action.attr, NULL};
+static struct attribute* attrs[] = {&do_enable.attr, NULL};
 
 static struct attribute_group attr_group = {.attrs = attrs};
 
