@@ -7,6 +7,7 @@
 #include <asm/msr.h>
 #include <asm/processor-flags.h>
 #include <asm/special_insns.h>
+#include <asm/tlbflush.h>
 #include <linux/mm.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -18,11 +19,20 @@
 #include "utils.h"
 #include "vmm.h"
 
-void test(void) { hv_utils_log(info, "resuming to guest\n"); }
-
 static void reset_fixed_bits(struct cpu_ctx* cpu) {
     native_write_cr0(cpu->unfixed_cr0.flags);
     native_write_cr4(cpu->unfixed_cr4.flags);
+}
+
+static u64 set_required_bits(u64 vector, u64 fixed0, u64 fixed1) {
+    u64 fixed_mask, flexible_mask, fixed_bits, flexible_bits;
+
+    flexible_mask = fixed0 ^ fixed1;
+    fixed_mask = vector & ~flexible_mask;
+
+    fixed_bits = (fixed0 | fixed1) & fixed_mask;
+    flexible_bits = flexible_mask & vector;
+    return fixed_bits | flexible_bits;
 }
 
 static void set_fixed_bits(struct cpu_ctx* cpu) {
@@ -32,12 +42,12 @@ static void set_fixed_bits(struct cpu_ctx* cpu) {
     cpu->unfixed_cr0 = cr0;
     cpu->unfixed_cr4 = cr4;
 
-    cr0.flags = hv_utils_set_required_bits(
-        cr0.flags, native_read_msr(IA32_VMX_CR0_FIXED0),
-        native_read_msr(IA32_VMX_CR0_FIXED1));
-    cr4.flags = hv_utils_set_required_bits(
-        cr4.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
-        native_read_msr(IA32_VMX_CR4_FIXED1));
+    cr0.flags =
+        set_required_bits(cr0.flags, native_read_msr(IA32_VMX_CR0_FIXED0),
+                          native_read_msr(IA32_VMX_CR0_FIXED1));
+    cr4.flags =
+        set_required_bits(cr4.flags, native_read_msr(IA32_VMX_CR4_FIXED0),
+                          native_read_msr(IA32_VMX_CR4_FIXED1));
 
     native_write_cr0(cr0.flags);
     native_write_cr4(cr4.flags);
@@ -45,22 +55,36 @@ static void set_fixed_bits(struct cpu_ctx* cpu) {
 
 void hv_vmx_launch_cpu(struct cpu_ctx* cpu) {
     u64 err = 0;
-    hv_arch_do_vmlaunch();
-    /* If execution continues, vmlaunch failed. */
-    err = hv_arch_do_vmread(VMCS_VM_INSTRUCTION_ERROR);
-    hv_utils_cpu_log(err, cpu, "VMLAUNCH failed with code: %llu\n", err);
+    hv_arch_vmlaunch();
+
+    /* If execution continues, VMLAUNCH failed. */
+    err = hv_arch_vmread(VMCS_VM_INSTRUCTION_ERROR);
+    hv_utils_cpu_log(err, "VMLAUNCH failed with code: %llu\n", err);
 }
 
 ssize_t hv_vmx_exit_root(struct cpu_ctx* cpu) {
-    if (hv_arch_do_vmclear(virt_to_phys(cpu->vmcs_region))) {
-        hv_utils_cpu_log(err, cpu,
+    /* If a logical processor leaves VMX operation, any VMCSs active on that
+     * logical processor may be corrupted. To prevent such corruption of a VMCS
+     * that may be used either after a return to VMX operation or on another
+     * logical processor, software should execute VMCLEAR for that VMCS before
+     * executing the VMXOFF instruction. */
+    if (hv_arch_vmclear(virt_to_phys(cpu->vmcs_region))) {
+        hv_utils_cpu_log(err,
                          "failed to execute VMCLEAR while exiting VMX root\n");
+        return -1;
     }
 
-    hv_arch_do_vmxoff();
-    hv_arch_disable_vmxe();
+    if (hv_arch_vmxoff()) {
+        hv_utils_cpu_log(crit,
+                         "failed to execute VMXOFF while exiting VMX root\n");
+        return -1;
+    }
+
+    /*hv_arch_disable_vmxe();*/
+    /* Implicitly invoke hv_arch_disable_vmxe() by resetting control registers
+     * to prior enabling VMX. */
     reset_fixed_bits(cpu);
-    hv_utils_cpu_log(info, cpu, "successfully exited VMX root operation\n");
+    hv_utils_cpu_log(info, "successfully exited VMX root operation\n");
     return 0;
 }
 
@@ -71,38 +95,33 @@ ssize_t hv_vmx_enter_root(struct cpu_ctx* cpu) {
 
     if (cr4.vmx_enable) {
         hv_utils_cpu_log(
-            err, cpu,
-            "VMXE is already enabled, is another hypervisor running?\n");
+            err, "VMXE is already enabled, is another hypervisor running?\n");
         return -1;
     }
 
-    hv_arch_enable_vmxe();
     set_fixed_bits(cpu);
-    hv_utils_cpu_log(debug, cpu, "successfully enabled VMXE\n");
+    hv_arch_enable_vmxe();
+    hv_utils_cpu_log(debug, "successfully enabled VMXE\n");
 
-    hv_utils_cpu_log(debug, cpu, "vmxon with addr=%pa[p]\n", &vmxon_ptr);
-    if (hv_arch_do_vmxon(vmxon_ptr)) {
-        hv_utils_cpu_log(err, cpu, "failed to execute VMXON\n");
+    if (hv_arch_vmxon(vmxon_ptr)) {
+        hv_utils_cpu_log(err, "failed to execute VMXON\n");
         goto vmxon_err;
     }
 
-    hv_utils_cpu_log(debug, cpu, "vmclear with addr=%pa[p]\n", &vmcs_ptr);
-    if (hv_arch_do_vmclear(vmcs_ptr)) {
-        hv_utils_cpu_log(info, cpu, "failed to execute VMCLEAR\n");
+    if (hv_arch_vmclear(vmcs_ptr)) {
+        hv_utils_cpu_log(info, "failed to execute VMCLEAR\n");
         goto vmclear_err;
     }
 
-    hv_utils_cpu_log(debug, cpu, "vmptrld with addr=%pa[p]\n", &vmcs_ptr);
-
-    if (hv_arch_do_vmptrld(vmcs_ptr)) {
-        hv_utils_cpu_log(info, cpu, "failed to execute VMPTRLD\n");
+    if (hv_arch_vmptrld(vmcs_ptr)) {
+        hv_utils_cpu_log(info, "failed to execute VMPTRLD\n");
         goto vmptrld_err;
     }
     return 0;
 
 vmptrld_err:
 vmclear_err:
-    hv_arch_do_vmxoff();
+    hv_arch_vmxoff();
 vmxon_err:
     hv_arch_disable_vmxe();
     reset_fixed_bits(cpu);
@@ -124,7 +143,7 @@ VMXON* hv_vmx_vmxon_create(struct cpu_ctx* cpu) {
      * bits beyond the processors physical address width. */
     if (!(vmxon_region =
               alloc_pages_exact(VMXON_REGION_REQUIRED_BYTES, GFP_KERNEL))) {
-        hv_utils_cpu_log(err, cpu, "unable to allocate VMXON region\n");
+        hv_utils_cpu_log(err, "unable to allocate VMXON region\n");
         return NULL;
     }
 
