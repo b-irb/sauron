@@ -1,6 +1,6 @@
 # Sauron
 
-![CPUID hooking](https://raw.githubusercontent.com/birb007/sauron/master/assets/demo.png)
+![CPUID hooking](assets/demo.png)
 
 `sauron` is a type-2 Intel VT-x hypervisor for blue-pilling a booted 64-bit Linux system ~~and a bad LOTR reference~~. It utilises Intel's virtualisation extensions (VMX) to place itself above the kernel (ring -1) then intercepts operations/events from the guest.
 
