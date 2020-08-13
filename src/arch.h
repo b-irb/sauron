@@ -1,34 +1,23 @@
 #pragma once
 
-#include <linux/ptrace.h>
 #include <linux/types.h>
 
 #include "ia32.h"
 
-/* Version Information: Type, Family, Model, and Stepping ID. */
-#define CPUID_VMX_ENABLED_LEAF 0x1
-#define CPUID_VMX_ENABLED_SUBLEAF 0x0
+#define CPUID_PHYS_ADDR_WIDTH_LEAF 0x80000008
 /* Virtual Machine Extensions support bit. */
 #define CPUID_VMX_ENABLED_BIT 0x5
-
-#define CPUID_REGISTER_EAX 0x0
-#define CPUID_REGISTER_EBX 0x1
-#define CPUID_REGISTER_ECX 0x2
-#define CPUID_REGISTER_EDX 0x3
 
 struct cpu_ctx;
 
 struct hv_arch_segment_descriptor {
     SEGMENT_SELECTOR selector;
-    SEGMENT_DESCRIPTOR_REGISTER_64 dtr;
     u64 limit;
     VMX_SEGMENT_ACCESS_RIGHTS access_rights;
     u64 base_address;
 };
 
 struct hv_arch_cpu_state {
-    u64 entry_sp;
-    struct pt_regs regs;
     CR0 cr0;
     CR3 cr3;
     CR4 cr4;
@@ -53,19 +42,22 @@ struct hv_arch_cpu_state {
     u64 sysenter_esp;
 };
 
+u32 hv_arch_cpuid(u32, u32, u32);
 bool hv_arch_cpu_has_feature(u32, u32, u32, u32);
 bool hv_arch_cpu_has_vmx(void);
 void hv_arch_enable_vmxe(void);
 void hv_arch_disable_vmxe(void);
-u8 hv_arch_do_vmxoff(void);
-u8 hv_arch_do_vmxon(phys_addr_t);
-u8 hv_arch_do_vmptrld(phys_addr_t);
-u8 hv_arch_do_vmclear(phys_addr_t);
-u8 hv_arch_do_vmwrite(unsigned long, unsigned long);
-u8 hv_arch_do_vmlaunch(void);
-u64 hv_arch_do_lsl(u16);
-u64 hv_arch_do_lar(u16);
-void hv_arch_do_sldt(SEGMENT_SELECTOR*);
+void hv_arch_invd(void);
+u8 hv_arch_vmxoff(void);
+u8 hv_arch_vmxon(phys_addr_t);
+u8 hv_arch_vmptrld(phys_addr_t);
+u8 hv_arch_vmclear(phys_addr_t);
+u8 hv_arch_vmwrite(unsigned long, unsigned long);
+u64 hv_arch_vmread(u64);
+u8 hv_arch_vmlaunch(void);
+u64 hv_arch_lsl(u16);
+u64 hv_arch_lar(u16);
+void hv_arch_sdlt(SEGMENT_SELECTOR*);
 u64 hv_arch_read_dr7(void);
 
 void hv_arch_capture_cpu_state(struct cpu_ctx*);
