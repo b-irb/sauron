@@ -45,8 +45,6 @@ static bool is_system_hyperviseable(void) {
 
 static struct vmm_ctx* vmm_ctx_create(void) {
     struct vmm_ctx* vmm;
-    struct cpu_ctx* cpu;
-    int i = 0;
 
     if (!(vmm = kzalloc(sizeof(*vmm), GFP_KERNEL))) {
         hv_utils_log(err, "unable to allocate memory for VMM context\n");
@@ -64,44 +62,21 @@ static struct vmm_ctx* vmm_ctx_create(void) {
         kfree(vmm);
         return NULL;
     }
-
-    for (i = 0; i < vmm->n_online_cpus; ++i) {
-        cpu = &vmm->each_cpu_ctx[i];
-        if (hv_cpu_ctx_init(cpu, vmm) < 0) {
-            hv_utils_log(err, "failed to create processor context\n");
-            hv_vmm_ctx_destroy(vmm);
-            return NULL;
-        }
-    }
-
     return vmm;
 }
 
+static void stop_cpu_shim(void* info) {
+    hv_cpu_ctx_destroy(
+        &((struct vmm_ctx*)info)->each_cpu_ctx[smp_processor_id()]);
+}
+
 void hv_vmm_ctx_destroy(struct vmm_ctx* vmm) {
-    struct cpu_ctx* cpu;
-    int i;
-    for (i = 0; i < vmm->n_online_cpus; ++i) {
-        cpu = &vmm->each_cpu_ctx[i];
-        if (!cpu->failed) {
-            hv_cpu_ctx_destroy(cpu);
-        }
-    }
+    on_each_cpu(stop_cpu_shim, vmm, 1);
     kfree(vmm->each_cpu_ctx);
     kfree(vmm);
 }
 
-static void hv_vmm_stop_cpu_shim(void* info) {
-    struct cpu_ctx* cpu =
-        &((struct vmm_ctx*)info)->each_cpu_ctx[smp_processor_id()];
-    if (!cpu->failed) {
-        hv_vmx_exit_root(cpu);
-    }
-}
-
-void hv_vmm_stop_hypervisor(struct vmm_ctx* vmm) {
-    on_each_cpu(hv_vmm_stop_cpu_shim, vmm, 1);
-    hv_vmm_ctx_destroy(vmm);
-}
+void hv_vmm_stop_hypervisor(struct vmm_ctx* vmm) { hv_vmm_ctx_destroy(vmm); }
 
 struct vmm_ctx* hv_vmm_start_hypervisor(void) {
     struct vmm_ctx* vmm;
@@ -123,13 +98,11 @@ struct vmm_ctx* hv_vmm_start_hypervisor(void) {
     }
 
     on_each_cpu(hv_cpu_init_entry, vmm, 1);
-    /* vmlaunch guest resume entry point */
+    /* VMLAUNCH guest resume entry point */
 
     for (i = 0; i < vmm->n_online_cpus; ++i) {
         cpu = &vmm->each_cpu_ctx[i];
-        if (!cpu->failed) {
-            vmm->n_init_cpus++;
-        }
+        vmm->n_init_cpus += !cpu->failed;
     }
     return vmm;
 }
