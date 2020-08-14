@@ -276,6 +276,9 @@ static ssize_t validate_vmcs_guest_state(struct hv_arch_cpu_state* state) {
             VMCS_CTRL_SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS)};
     const CR0 cr0 = {.flags = hv_arch_vmread(VMCS_GUEST_CR0)};
     const CR4 cr4 = {.flags = hv_arch_vmread(VMCS_GUEST_CR4)};
+    const RFLAGS rflags = {.flags = hv_arch_vmread(VMCS_GUEST_RFLAGS)};
+    const IA32_VMX_ENTRY_CTLS_REGISTER vmentry_ctls = {
+        .flags = hv_arch_vmread(VMCS_CTRL_VMENTRY_CONTROLS)};
 
     /* Assume CR0 and CR4 have been fixed using IA32_CR(0,4)_FIXED(0,1) MSRs. */
 
@@ -398,6 +401,63 @@ static ssize_t validate_vmcs_guest_state(struct hv_arch_cpu_state* state) {
         hv_utils_cpu_log(err, "VMCS GUEST: CS must have the table flag set\n");
         err = -1;
     }
+
+    /* Checks on Guest Descriptor-Table Registers */
+
+    if (!hv_utils_is_canonical(hv_arch_vmread(VMCS_GUEST_GDTR_BASE))) {
+        hv_utils_cpu_log(
+            err, "VMCS GUEST: GDTR must have a canonical base address\n");
+        err = -1;
+    }
+
+    if (!hv_utils_is_canonical(hv_arch_vmread(VMCS_GUEST_LDTR_BASE))) {
+        hv_utils_cpu_log(
+            err, "VMCS GUEST: LDTR must have a canonical base address\n");
+        err = -1;
+    }
+
+    /* Assume the limt fields of each descriptor table entry is valid (bits
+     * 31:16 are 0). */
+
+    /* Checks on Guest RIP, RFLAGS, and SSP */
+
+    /* Assume valid RIP. */
+
+    if (!rflags.read_as_1 || rflags._reserved1 || rflags._reserved2 ||
+        rflags._reserved3 || rflags._reserved4) {
+        hv_utils_cpu_log(err, "VMCS GUEST: invalid reserved bits in RFLAGS\n");
+        err = -1;
+    }
+
+    if ((vmentry_ctls.ia32e_mode_guest || cr0.protection_enable) &&
+        rflags.virtual_8086_mode_flag) {
+        hv_utils_cpu_log(err, "VMCS GUEST: invalid VM flag in RFLAGS\n");
+        err = -1;
+    }
+
+    /* Assume valid IF flag in RFLAGS. */
+
+    /* TODO SSP */
+
+    /* Checks on Guest Non-Register State */
+
+    hv_utils_cpu_log(info, "activity state = %d\n",
+                     hv_arch_vmread(VMCS_GUEST_ACTIVITY_STATE));
+    if (hv_arch_vmread(VMCS_GUEST_ACTIVITY_STATE) > 3) {
+        hv_utils_cpu_log(err, "VMCS GUEST: invalid activity state field\n");
+        err = -1;
+    }
+
+    if (hv_arch_vmread(VMCS_GUEST_ACTIVITY_STATE) == vmx_hlt &&
+        !state->seg_ss.access_rights.descriptor_privilege_level) {
+        hv_utils_cpu_log(err,
+                         "VMCS GUEST: the activity state must not indicate the "
+                         "HLT state if the DPL in the AR of SS is not 0\n");
+        err = -1;
+    }
+
+    /* Assuming pending debug exceptions, VMCS link pointer, and
+     * interruptibility state is valid. */
 
     return err;
 }
