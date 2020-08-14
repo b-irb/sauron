@@ -66,8 +66,15 @@ static struct vmm_ctx* vmm_ctx_create(void) {
 }
 
 static void stop_cpu_shim(void* info) {
-    hv_cpu_ctx_destroy(
-        &((struct vmm_ctx*)info)->each_cpu_ctx[smp_processor_id()]);
+    struct cpu_ctx* cpu =
+        &((struct vmm_ctx*)info)->each_cpu_ctx[smp_processor_id()];
+    /* If the processor failed during execution, its context structure and state
+     * should have been destroyed/reset. */
+    if (cpu->failed) {
+        return;
+    }
+    hv_cpu_shutdown();
+    hv_cpu_ctx_destroy(cpu);
 }
 
 void hv_vmm_ctx_destroy(struct vmm_ctx* vmm) {
