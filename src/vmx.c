@@ -80,7 +80,6 @@ ssize_t hv_vmx_exit_root(struct cpu_ctx* cpu) {
         return -1;
     }
 
-    /*hv_arch_disable_vmxe();*/
     /* Implicitly invoke hv_arch_disable_vmxe() by resetting control registers
      * to prior enabling VMX. */
     reset_fixed_bits(cpu);
