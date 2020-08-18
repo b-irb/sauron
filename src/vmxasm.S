@@ -4,7 +4,6 @@
 .extern hv_cpu_init
 
 // https://github.com/asamy/ksm/blob/e7e24931c9df26c33d6e2a0ea9a44c78d3ced7a6/vmx.S#L59
-// RSP is read from VMCS.
 .macro store_cpu_state
 	pushq %rbp
 	subq $8, %rsp
@@ -102,7 +101,6 @@ SYM_FUNC_START(hv_detach_hypervisor)
 	restore_cpu_state
 	// %rax contains a pointer to the hv_exit_state structure
 	// at the top of the stack.
-	// cli
 	// RFLAGS
 	push 0x1a8(%rax)
 	popfq
