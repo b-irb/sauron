@@ -37,8 +37,6 @@ struct cpu_ctx_stack {
     struct cpu_ctx* cpu;
 };
 
-/*
- *ssize_t hv_cpu_ctx_init(struct cpu_ctx*, struct vmm_ctx*);
- */
 void hv_cpu_ctx_destroy(struct cpu_ctx* ctx);
 void hv_cpu_init(void*, u64, u64, u64);
+void hv_cpu_shutdown(void);
