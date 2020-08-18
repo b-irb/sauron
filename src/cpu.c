@@ -14,21 +14,21 @@
 #include "vmx.h"
 #include "vmxasm.h"
 
-void hv_cpu_ctx_destroy(struct cpu_ctx* cpu) {
-    unsigned int placeholder[2];
-    if (!cpu->failed) {
-        /* Signal hypervisor to detach. */
-        cpuid_count(HV_CPUID_DETACH_LEAF, HV_CPUID_DETACH_SUBLEAF,
-                    &placeholder[0], NULL, &placeholder[1], NULL);
-    }
+void hv_cpu_shutdown(void) {
+    unsigned int placeholder[4];
+    /* Signal hypervisor to detach. */
+    cpuid_count(HV_CPUID_DETACH_LEAF, HV_CPUID_DETACH_SUBLEAF, &placeholder[0],
+                &placeholder[1], &placeholder[2], &placeholder[3]);
+}
 
+void hv_cpu_ctx_destroy(struct cpu_ctx* cpu) {
     free_pages_exact(cpu->msr_bitmap, PAGE_SIZE);
     free_pages_exact(cpu->vmexit_stack, VMX_VMEXIT_STACK_SIZE);
     hv_vmx_vmxon_destroy(cpu->vmxon_region);
     hv_vmcs_vmcs_destroy(cpu->vmcs_region);
 }
 
-ssize_t cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
+static ssize_t cpu_ctx_init(struct cpu_ctx* cpu, struct vmm_ctx* vmm) {
     phys_addr_t addr;
 
     cpu->vmm = vmm;
@@ -112,11 +112,6 @@ void hv_cpu_init(void* info, u64 ip, u64 sp, u64 flags) {
     cpu->resume_ip = ip;
     cpu->resume_flags = flags;
 
-    hv_utils_cpu_log(info, "sp=%zu, ip=%zu, flags=%zu\n",
-                     offsetof(struct cpu_ctx, resume_sp),
-                     offsetof(struct cpu_ctx, resume_ip),
-                     offsetof(struct cpu_ctx, resume_flags));
-
     if (hv_vmcs_vmcs_init(cpu) < 0) {
         hv_utils_cpu_log(err, "failed to setup the VMCS\n");
         goto vmcs_err;
@@ -125,14 +120,12 @@ void hv_cpu_init(void* info, u64 ip, u64 sp, u64 flags) {
     hv_utils_cpu_log(info, "executing VMLAUNCH (VM-exit handler at %pK)\n",
                      cpu->vmexit_handler);
 
-    /* hv_vmx_launch_cpu does not return if VMLAUNCH is successfully
-     * executed. */
-    /*hv_vmx_launch_cpu(cpu);*/
+    /* This does not return if VMLAUNCH is successfully executed. */
+    hv_vmx_launch_cpu(cpu);
     hv_utils_cpu_log(err, "failed to enable hypervisor\n");
 vmcs_err:
     hv_vmx_exit_root(cpu);
 error:
-    cpu->failed = true;
     hv_cpu_ctx_destroy(cpu);
 ctx_err:
     cpu->failed = true;
