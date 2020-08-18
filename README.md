@@ -84,4 +84,4 @@ Then create an issue on GitHub with the output and any other relevant informatio
 * [KSM](https://github.com/asamy/ksm) is a hypervisor for Linux and Windows which provided a reference while troubleshooting.
 * [SimpleVisor](https://github.com/ionescu007/SimpleVisor) provided inspiration for several aspects of the design.
 * [Intel SDM 3C (Part 3, Chapter 23)](https://software.intel.com/content/www/us/en/develop/download/intel-64-and-ia-32-architectures-sdm-combined-volumes-3a-3b-3c-and-3d-system-programming-guide.html) is the authoritative resource on VMX.
-* [Reverse Engineering Discord](https://discord.gg/jbvKkM) answered all of my questions which was crucial during development.
+* [Reverse Engineering Discord](https://discord.gg/PSfAu8N) answered all of my questions which was crucial during development.
