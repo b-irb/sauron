@@ -64,11 +64,11 @@ $ dmesg -k | grep sauron
 ```
 
 ## Troubleshooting
-If an issue occurs, attempt to replicate it with a debug build to provide more context. To build a debug release, uncomment the below line in `Makefile` then recompile.
-```Makefile
-#ccflags-y += -DDEBUG
+If an issue occurs, attempt to replicate it with a debug build to provide more context. To build a debug release, run the below command.
+```sh
+make debug
 ```
-Create an issue on GitHub with the output and any other relevant information (no guarantees it will be fixed).
+Then create an issue on GitHub with the output and any other relevant information (no guarantees it will be fixed).
 
 ### Issues
 * KVM and VirtualBox do not properly implement `XSAVE` under nested VMX which causes `sauron` to immediately crash the host.
