@@ -441,8 +441,6 @@ static ssize_t validate_vmcs_guest_state(struct hv_arch_cpu_state* state) {
 
     /* Checks on Guest Non-Register State */
 
-    hv_utils_cpu_log(info, "activity state = %d\n",
-                     hv_arch_vmread(VMCS_GUEST_ACTIVITY_STATE));
     if (hv_arch_vmread(VMCS_GUEST_ACTIVITY_STATE) > 3) {
         hv_utils_cpu_log(err, "VMCS GUEST: invalid activity state field\n");
         err = -1;
@@ -451,14 +449,14 @@ static ssize_t validate_vmcs_guest_state(struct hv_arch_cpu_state* state) {
     if (hv_arch_vmread(VMCS_GUEST_ACTIVITY_STATE) == vmx_hlt &&
         !state->seg_ss.access_rights.descriptor_privilege_level) {
         hv_utils_cpu_log(err,
-                         "VMCS GUEST: the activity state must not indicate the "
+                         "VMCS GUEST: the activity state must not indicate "
+                         "the "
                          "HLT state if the DPL in the AR of SS is not 0\n");
         err = -1;
     }
 
-    /* Assuming pending debug exceptions, VMCS link pointer, and
-     * interruptibility state is valid. */
-
+    /* Assuming pending debug exceptions, VMCS link pointer,
+     * and interruptibility state is valid. */
     return err;
 }
 
@@ -519,8 +517,6 @@ static ssize_t vmcs_guest_state_area_init(struct cpu_ctx* cpu) {
 
     err |= hv_arch_vmwrite(VMCS_GUEST_RIP, cpu->resume_ip);
     err |= hv_arch_vmwrite(VMCS_GUEST_RSP, cpu->resume_sp);
-    /* RFLAGS is overwritten in VMX guest entry on VMLAUNCH so we use a
-     * valid RFLAGS placeholder value. */
     err |= hv_arch_vmwrite(VMCS_GUEST_RFLAGS, cpu->resume_flags);
 
     SETUP_GUEST_SEGMENT_SELECTOR(CS, state.seg_cs);
