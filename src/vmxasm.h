@@ -4,6 +4,7 @@
 
 extern void hv_cpu_init_entry(void*);
 extern void* hv_exit_vmexit_entry;
+extern void hv_detach_hypervisor(void*);
 
 struct hv_exit_state {
     u64 r15;

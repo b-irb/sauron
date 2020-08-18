@@ -22,11 +22,9 @@
 	pushq %r13
 	pushq %r14
 	pushq %r15
-	pushfq
 .endm
 
 .macro restore_cpu_state
-	popfq
 	popq %r15
 	popq %r14
 	popq %r13
@@ -46,31 +44,74 @@
 .endm
 
 .text
-
+// Per-CPU hypervisor initialisation entry point
 SYM_FUNC_START(hv_cpu_init_entry)
+	pushfq
 	store_cpu_state
-
-	// %rdi contains the vmm_gloabl_ctx structure
-	// vmlaunch entry point
-	lea hv_vmx_guest_resume(%rip), %rsi
-	// vmlaunch entry sp
+	movabs $.vmx_guest_resume, %rsi
 	movq %rsp, %rdx
-	// x64 alloc shadow stack
+	movq 0x80(%rsp), %rcx
+	// %rdi contains the VMM context structure (struct vmm_ctx).
+	// %rsi contains the address to jump to after VMLAUNCH.
+	// %rdx contains the original sp for VMX guest.
+	// %rcx contains the original flags for VMX guest.
 	subq $0x20, %rsp
-	// hv_cpu_init does not return if vmlaunch is executed successfully.
-	// If vmlaunch fails to execute, hv_cpu_init_entry returns with an
-	// error indication.
 	call hv_cpu_init
-	// x64 dealloc shadow stack
 	addq $0x20, %rsp
-
+	jmp .vmx_guest_resume
+.vmx_guest_resume:
+	// If VMLAUNCH fails to execute, hv_cpu_init_entry returns with an
+	// error indication with ((struct cpu_ctx*)cpu)->failed. Otherwise,
+	// the failed indicator is not set.
 	restore_cpu_state
+	popfq
 	ret
 SYM_FUNC_END(hv_cpu_init_entry)
 EXPORT_SYMBOL(hv_cpu_init_entry)
 
-SYM_FUNC_START(hv_vmx_guest_resume)
+// VM-exit entry point
+SYM_FUNC_START(hv_exit_vmexit_entry)
+	store_cpu_state
+	movq 0x80(%rsp), %rdi
+	movq %rsp, %rsi
+	// %rdi contains the cpu_ctx pointer at the top of the stack
+	// which store_cpu_state moves by 0x80 bytes.
+	// %rsi contains a pointer to a hv_exit_state instance.
+	subq $0x20, %rsp
+	call hv_exit_vmexit_handler
+	addq $0x20, %rsp
+
+	test %al, %al
+	jnz .failure
+
 	restore_cpu_state
+	VMRESUME
+	// If VMRESUME does not succeed then attempt to handle error.
+	jmp .failure
+.failure:
+	// TODO implement VMRESUME error handler
+	jmp .critical_failure
+.critical_failure:
+	hlt
+	jmp .critical_failure
+SYM_FUNC_END(hv_exit_vmexit_entry)
+EXPORT_SYMBOL(hv_exit_vmexit_entry)
+
+SYM_FUNC_START(hv_detach_hypervisor)
+	mov %rdi, %rsp
+	restore_cpu_state
+	// %rax contains a pointer to the hv_exit_state structure
+	// at the top of the stack.
+	// cli
+	// RFLAGS
+	push 0x1a8(%rax)
+	popfq
+	// Stack pointer
+	mov 0x198(%rax), %rsp
+	// Instruction pointer
+	push 0x1a0(%rax)
+	// Clear %rax to not leak kernel pointer.
+	xor %rax, %rax
 	ret
-SYM_FUNC_END(hv_vmx_guest_resume)
-EXPORT_SYMBOL(hv_vmx_guest_resume)
+SYM_FUNC_END(hv_detach_hypervisor)
+EXPORT_SYMBOL(hv_detach_hypervisor)
