@@ -36,15 +36,19 @@ bool hv_arch_cpu_has_vmx(void) {
 }
 
 void hv_arch_enable_vmxe(void) {
+    CR4 cr4 = {.flags = native_read_cr4()};
     /* To enable VMX, software must ensure CR4.VMXE[bit 13] = 1. Otherwise,
      * VMXON will generate a #UD exception. */
-    cr4_set_bits(X86_CR4_VMXE);
+    cr4.vmx_enable = 1;
+    __write_cr4(cr4.flags);
 }
 
 void hv_arch_disable_vmxe(void) {
+    CR4 cr4 = {.flags = native_read_cr4()};
     /* To disable VMX, software must ensure CR4.VMXE[bit 13] = 0. This will
      * cause VMXON to generate a #UD exception. */
-    cr4_clear_bits(X86_CR4_VMXE);
+    cr4.vmx_enable = 0;
+    __write_cr4(cr4.flags);
 }
 
 void hv_arch_invd(void) { asm volatile("invd\n"); }
